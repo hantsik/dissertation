@@ -220,8 +220,10 @@ def iteration (h,b,Mx,My,S,P,maxstress,step):
 
             #This makes everything that is understressed value to nought
             # taking into account the step size and number of itearation 
-        
-            principal1[absprincipal1 < maxstress*step*kord] = 0
+            
+            row_mask = np.arange(h) >= 5
+            principal1[(absprincipal1 < maxstress*step*kord) & row_mask[:, None]] = 0
+         
 
             # Then you remember the new matrix with removed material
             # and work with that instead
