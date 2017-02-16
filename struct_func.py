@@ -346,7 +346,7 @@ def iteration (h,b,f, Mx,My,S,P,maxstress,step):
 
             while ( i<h ):
                 
-                print (i)
+                #print (i)
                 while ( j<b ):
                     if ( absprincipal1[i,j] < maxstress*step*kord ): 
                         #print (absprincipal1[i,j] < maxstress*step*kord)
