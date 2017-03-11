@@ -1,0 +1,368 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Feb  2 23:02:57 2017
+
+@author: hanna-stinasonts
+"""
+
+'''
+
+INTRODUCTION
+
+Welcome to Hanna-Stina's dissertation Python baby.
+You are currently in the 'cooking pot' of my code thing, meaning this is the place
+where you want to define all your initial parameters, click run and let it work its
+magic.
+
+
+You will also need:
+
+a) loading.py in order to be calculate all the loading conditions
+(unless you are being adventurous and importing them with pandas from excel yourself)
+
+b) struct_func.py aka structural engineering functions to be able to calculate all
+the stresses and stuff
+
+
+General point:
+
+a) Dimensions - you set the maximum space limits, the real optimum structure might 
+not actually need that much space so it's worth playing around with numbers
+
+
+b) Material Limits - You can pick whichever but I have generally designed 
+for steel beams meaning you'll probably be in the range of 275-355 N/mm2
+
+
+c) Iteration paramters - aka the fun bit. 
+
+
+Flange (f) - So for constructability reasons I have
+incorporated a top flange bit, which means that no matter how the most efficient
+profile might look like, the top of the section will never be removed.
+you'll need a flat top to actually be able to build stuff on and it needs to be 
+of acceptable thickness, so just 1mm will not do. 
+
+Cuts - How many pieces do you want to divide your beam up to, the more the better 
+and more accurate to extrapolate the sections to a whole beam.
+This should be an even number if you want to have a cut through the middle (aka 
+probably the most stressed region of your beam).
+NB: the name 'cuts' is misleading i know but i can't be arsed to change it atm
+
+Steps - Defines the step size of iteration. So if set to 1% or 0.01 in, then the
+program will get rid of all elements that are stressed by less than  maxstress*0.01, with
+the next round of iteration being maxstress*0.02 and so on.
+NB: The tricky bit- you might think you are being super clever and saving time
+by putting a fairly big step size (even with 0.1), but oh no, then the program will
+spit you an error saying "Ay/A can't divide by 0" because you have accidentally 
+got rid of all the elements in your cross-section. I'm sure there is a more
+intelligent way arounf this but i've left things just at 0.01 for now. 
+
+d) Loading - all pretty straighforwad but bear in mind to add already factored loading.
+
+'''
+
+#Python priginal functions
+import numpy as np 
+np.set_printoptions(precision = 1)   # Sets the rounding percision to 0.1
+import matplotlib.pyplot as plt
+import time
+import pandas
+import copy
+
+#Functions I've written myself for the purpose of the dissertation study
+from struct_func import geometry, iteration, basemove, flangemove
+from loading import loading 
+
+
+
+###############################################################
+######---THESE PARAMETERS NEED TO BE INPUT BY USER ---#########
+###############################################################
+
+# a) DIMENTIONS
+# smallest iteration level is for a 1mm2 box
+
+L = 7000     #beam length in mm
+b = 500      #how wide in mm
+h = 500      #how tall in mm
+
+# b) MATERIAL LIMITS
+
+maxstress = 275 # Material stress limit in N/mm2
+E = 210000   #steel E value in N/mm2 so in 
+
+# c) ITEARATION PARAMETERS
+
+f =4         # Top flange thickness in mm
+w = 4           # Web thickness, if our b is even, use an even w, if uneven use uneven w
+cuts = 10      # Number of sections the beam is cut up to, therefore always with cuts+1 points analysed 
+step = 0.01   # Defines step size in itearation, the smaller the more accurate
+              # NB! If the step is too big the program will want to
+              # get rid of most elemenets in first round as the stresses
+              # haven't had a change to redistribute- hence keep small enough
+
+# d) LOADING
+
+#In the vertical direction (major axis), where positive loading acts downwards
+
+#(5*1.5+2*1.3)*7=10.1x7=71
+w1=71 #UDL loading in kN/m same as N/mm
+P1=0 #Point Load value in kN
+x1= 0 #Point load location from left end of beam in mm
+
+#In the horizontal out of plane (minor axis), where positive loading acts ?????
+w2=0 #UDL loading in kN/m
+P2=0 #Point Load value in kN
+x2=0 #Point load location from left end of beam in mm
+
+#axial loading
+P=0.1 #in kN
+
+
+
+
+
+###############################################################
+######---             CALCULATIONS                 ---#########
+###############################################################
+
+
+'''
+'loading' is a function that calculates all the loading conditions along the beam
+at cuts+1 locations. The results have been summarised in the matrix r where each column
+represents a cut, with a total of 4 rows that contain in each row:
+    1. The first row lists the location of the cut aka the x coordinate along the beam
+    2. The next row has the shear force acting at that point
+    3. Major bending moment
+    4. Minor bending moment
+    5. Row is left empty for now so we can put deflections in later
+'''
+
+r= np.round(loading(L, cuts, w1, P1, x1, w2, P2, x2),1)
+print (r)
+
+#To work out deflections you can just recycle the r matrix
+# as you'll need lication and moment anyway
+defl =copy.deepcopy (r)
+
+'''
+In the defelctions one we insert data as 
+    0. The first row lists the location of the cut aka the x coordinate along the beam
+    1. Here we replace all values with I values in mm4
+    2. Major bending moment
+    3. Area of cross-section
+    4. 1st integral of deflections
+    5. Accumulative deflections
+'''
+
+
+
+'''
+
+Now, knowing the loading conditions at each point, we go through a loop
+along the length of the beam and iterate the perfect cross-section for 
+each location.
+
+'''
+
+#Sets the timer starting point so we kan see how long the program runs
+start_time = time.time()
+
+'''
+ You need to separate into two cases, one if only in plane loading
+
+ - You want to keep the web and flange as thin as possible
+ 
+ - In which case you need it to always keep the middle line,
+which means you need to change the stop criteria
+so you can make a new mask matrix, and delete the correct middle rowns from it 
+
+
+ And one with also out of plane loading
+
+ - In this case you should incorporate a criteria to keep the edge always thick 
+ 
+''' 
+ 
+# Here you only first calculate the midpoint
+
+j = ( cuts/2 )
+while ( j <= (cuts/2) ):
+    
+    
+    #Geometrical locationon along the x axis in mm
+    x= r[0,int(j)] 
+    # The shear force at that point
+    S= r[1,int(j)]
+    #The major bending moment
+    Mx= r[2,int(j)]
+    #Minor bending moment
+    My= r[3,int(j)]
+          
+    My1=My
+    
+    #print ("At location x=", x, " the principal stresses are ","\n")
+
+    '''
+    Here I have used the 'initial' function to calculate the stresses 
+    in original section. This step is not really necessary as the next function
+    redoes it, but it's nice to be able to visually compare the initial section
+    to the final I guess
+    '''
+    
+    #principal1 = np.round((initial (h,b, Mx,My,S,P,maxstress) ),1)
+    #print ("Initial results ","\n", principal1,"\n")
+    
+    '''
+    The 'iteration' function goes within a loop at the single locations and
+    retrieves the optimised cross-section for that single location
+    
+    '''
+    
+    remember = np.round(iteration (h,b,f,w, Mx,My,My1,S,P,maxstress,step),1)
+    print ("After iteration at location ",x, "\n", "\n")
+    
+    #Prints how long program has run up to this point
+    print("--- %s seconds ---" % round(time.time() - start_time, 0))
+    
+    remembercopy= copy.deepcopy(remember)
+    remembercopy[remembercopy == 0.0] = np.nan
+    np.flipud(remembercopy) #upu need to plot it the other way around
+    # http://stackoverflow.com/questions/10114576/setting-points-with-no-data-to-white-with-matplotlib-imshow
+    img = plt.imshow(remembercopy, interpolation='nearest')
+    img.set_cmap('plasma')  #Plasma is pretty http://matplotlib.org/examples/color/colormaps_reference.html
+    plt.clim(-275,275)
+    plt.axis('off')
+    plt.show()
+    
+    plt.clf()
+    
+    
+    print ("For midlocation, The Max value in matrix is ", round(np.max(remember[np.nonzero(remember)]),1), "kN/m2 for a single element ""\n", "\n")
+    print()
+    
+    j=j+1
+    
+    index = ['Row'+str(i) for i in range(1, len(remembercopy)+1)]
+    df = pandas.DataFrame(remembercopy, index=index)    
+    df.to_csv('principal1.csv', split=', ')
+
+#You define the most optimal middle cross-section as the startin point    
+#Calculates the most optimal section at midspan
+
+midsection=copy.deepcopy(remember)
+
+
+j = 0 
+while ( j <= cuts/2 ): #should be cuts/2
+    
+    print("Start iterating for location ", j, "\n")
+    
+    #Use the correct forces
+    # The shear force at that point
+    S= r[1,int(j)]
+    #The major bending moment
+    Mx= r[2,int(j)]
+    #Minor bending moment
+    My= r[3,int(j)]
+    
+    #print ("Now moving base around ")
+    newsection = np.round ( (basemove(midsection,h,b,f,w, Mx,My1, My,S,P,maxstress,step)), 1)
+    
+    absnewsection3= abs(newsection)
+   # print ("Max stress after web move stress ", ((np.max(absnewsection3[np.nonzero(absnewsection3)])))  )
+    
+    '''
+    remembercopytry= copy.deepcopy(newsection)
+    remembercopy= np.flipud(remembercopytry) #because you need to flip it for printing
+    remembercopy[remembercopy == 0.0] = np.nan
+    img = plt.imshow(remembercopy, interpolation='nearest')
+    img.set_cmap('plasma')  #Plasma is pretty http://matplotlib.org/examples/color/colormaps_reference.html
+    plt.clim(-275,275)
+    plt.axis('off')
+    plt.ylim([0,500])
+    plt.show()
+    plt.clf()
+    '''
+    
+    absnewsection4= abs(newsection)
+    #print ("Max stress before importing to flange ", ((np.max(absnewsection4[np.nonzero(absnewsection4)])))  )
+    
+    
+    #print ("Now moving flange around ")
+    
+    flangesection = np.round( ( flangemove (newsection,b, Mx, My,S,P,maxstress,step)), 1 )
+    
+    print("--- %s seconds ---" % round(time.time() - start_time, 0))
+    
+    remembercopytry2=copy.deepcopy(flangesection)
+    remembercopy2= np.flipud(remembercopytry2)
+    remembercopy2[remembercopy2 == 0.0] = np.nan
+    # http://stackoverflow.com/questions/10114576/setting-points-with-no-data-to-white-with-matplotlib-imshow
+    img = plt.imshow(remembercopy2, interpolation='nearest')
+    img.set_cmap('plasma')  #Plasma is pretty http://matplotlib.org/examples/color/colormaps_reference.html
+    plt.clim(-275,275)
+    plt.axis('off')
+    plt.ylim([0,500])
+    plt.show()
+    plt.clf()
+    
+    print ("The Max value at cut, ", j, " in matrix is ", round(np.max(flangesection[np.nonzero(flangesection)]),1), "kN/m2 for a single element ","\n", "\n")
+    print()
+    
+    
+    #Stuff we need to calculate deflections later on
+    hc=     newsection.shape
+    hc = ( newsection.shape[0] )
+    
+    Y= (geometry(newsection,b,hc))
+    defl[3,int(j)] =Y[0] #Area
+    print ("The area is ", defl[3,int(j)] )
+    defl[1,int(j)] = Y[2] #Iy value
+
+    
+    j=j+1
+    
+
+    #index = ['Row'+str(i) for i in range(1, len(remembercopy)+1)]
+    #df = pandas.DataFrame(remembercopy, index=index)    
+    #df.to_csv('principal1.csv', split=', ')
+
+'''    
+Now we try and calculate the defletion at midspan -M/EI *x
+
+In the defelctions one we insert data as 
+    0. The first row lists the location of the cut aka the x coordinate along the beam
+    1. Here we replace all values with I values in mm4
+    2. Major bending moment
+    3. Area of cross-section
+    4. M/EI value 
+    5. 1st integral of deflections
+    6. Accumulative deflections
+'''
+
+x = L/cuts
+
+j=0
+defl[4,j] = defl[2,j] / ( E * defl[1,j] ) #Area
+defl[5,j] = 0
+defl[6,j] = 0
+
+j=1
+while (j < (cuts/2) ) :
+    
+    #Double integrating using the trapezium rule
+    defl[4,j] = defl[2,j] / ( E * defl[1,j] ) #M/(EI)
+    defl[5,j] = defl[5,int(j-1)] + 0.5 * x * ( defl[4,int(j-1)] + defl[4,j] ) 
+    defl[6,j] = defl[6,int(j-1)] + 0.5 * x * ( defl[5,int(j-1)] + defl[5,j] )
+    j=j+1
+
+print (defl)
+
+index = ['Row'+str(i) for i in range(1, len(defl)+1)]
+df = pandas.DataFrame(defl, index=index)    
+df.to_csv('defl.csv', split=', ')
+
+
