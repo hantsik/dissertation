@@ -32,7 +32,7 @@ def loading(L, cuts, w1, P1, x1, w2, P2, x2):
     points= cuts+1
     
     # Create an empty matrix to store your results 
-    r = np.ones((4, points), dtype=np.float  )
+    r = np.ones((7, points), dtype=np.float  ) #5th and 6th is empty
 
     '''
     Therefore you start moving along the x axis and calculating all the corresponding loads,
