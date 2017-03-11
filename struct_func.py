@@ -25,6 +25,8 @@ most by using the user-written and then imported Basic functions.
 import numpy as np 
 import copy
 np.set_printoptions(precision=1)  #set working precision to .1
+import matplotlib.pyplot as plt
+import pandas
 
 
     ##################################
@@ -44,9 +46,9 @@ def geometry(m, b, h):
     
     while ( i<h ):
         while ( j<b ):
-            if ( (m[i,j]) != 0) :      #If 0, then considered as empty and not counted
-                  A=A+1
-                  Ay = Ay + (i+ 0.5) #i+0.5 to account for centrid of element (element height 1)
+            if ( (m[i,j]) != 0 ) :      #If 0, then considered as empty and not counted
+                A=A+1
+                Ay = Ay + (i+ 0.5) #i+0.5 to account for centrid of element (element height 1)
             j= j + 1
         i=i+1
         j=0
@@ -62,9 +64,9 @@ def geometry(m, b, h):
 
     while ( i<h ):
         while ( j<b ):
-            if ( (m[i,j])!=0) :             #As 0 would bean an elements with no area
-                  Iy = Iy + ( abs(i+0.5-ybary) )**2        
-            j= j + 1
+            if (  (m[i,j]) != 0 ):             #As 0 would bean an elements with no area
+                Iy = Iy + ( i+0.5 - ybary )**2   
+            j= j + 1     
         i=i+1
         j=0
 
@@ -83,7 +85,7 @@ def moment(m, M, b, h, ybar, I):
 
     while ( i<h ):
         while ( j<b ):
-            if ( (moment1 [i,j]) != 0) :             
+            if (  (moment1[i,j]) != 0) :             
                 moment1 [i,j] = (M*(ybar-i-0.5))/I #Calculates bending stress in each element
             j= j + 1
         i=i+1
@@ -118,7 +120,8 @@ def shear(m, S, b, h, ybary, Iy):
     
         #The loop where you count elements in and up to end of row
         while ( j<b ):              # Starts to read elements from left in frist row
-            if ( (shear1[i,j])!=0) :   
+            if (  (shear1[i,j]) != 0)  :   
+
                 t= t+1
                 As= As+1 
                 Ay = Ay + 1*(ybary-i-0.5)
@@ -129,7 +132,8 @@ def shear(m, S, b, h, ybary, Iy):
         #Loop where you assign values to elements in row
         while ( j<b ):              # Starts to read elements from left in frist row
             
-            if ( (shear1[i,j])!=0) :   
+            if (  (shear1[i,j]) != 0 ) :   
+   
                 shear1[i,j]=(S*(Ay)/(Iy*t))     #NB the ybar-i/2 is a roug simplification of centroid
             j=j+1
         j=0
@@ -190,8 +194,8 @@ def principal (m, b, h, momentx, momenty, shear1):
 
     while ( i<h ):
         while ( j<b ):
-            if ( (principal1 [i,j])!=0) :             
-                
+            if (  (principal1[i,j]) != 0 ) :             
+
                 # Tricky nr 1
                 
                 z = (momentx[i,j] + momenty[i,j])/2 + (( ((momentx[i,j] - momenty[i,j])/2)**2 + (shear1[i,j])**2 )**(0.5))
@@ -277,7 +281,7 @@ def initial (h,b,Mx,My,S,P,maxstress):
     
     
     
-def iteration (h,b,f, Mx,My,S,P,maxstress,step): 
+def iteration (h,b,f,w, Mx,My,My1,S,P,maxstress,step): 
     "Return the final iterataion of the cross-section" 
     
     from struct_func import geometry, moment, shear, principal, initial 
@@ -287,6 +291,8 @@ def iteration (h,b,f, Mx,My,S,P,maxstress,step):
     principal1 = (initial (h,b,Mx,My,S,P,maxstress) )
     
     # Then it checks if the principal stresses are within limits
+    
+    #print ("Intitial princiapl, ", "\n", principal1)
 
     if ( ((abs(principal1))>(maxstress)).any() ):
         print ("The max principal stress is more than allowed")
@@ -297,6 +303,10 @@ def iteration (h,b,f, Mx,My,S,P,maxstress,step):
     else: 
     
         kord=1 #Remembers the number of the iteration
+        
+        #There may be instances when it's already optimum at first round
+        #So for these cases
+        remember= copy.deepcopy (principal1)
    
         absprincipal1= abs(principal1)  # You take abs as you have both +&- stresses
     
@@ -319,7 +329,28 @@ def iteration (h,b,f, Mx,My,S,P,maxstress,step):
         '''
         
         #Matrix of element stresses below the flange
-        flange =  np.delete(principal1, np.s_[0:(f)], axis=0)
+        flange1 =  np.delete(principal1, np.s_[0:(f)], axis=0)
+        #flange for 
+        
+        #If there are no out of plane reactions, then place web in the moddle 
+        if (My1==0):
+            flange =  np.delete(flange1, np.s_[ int(b/2 - w/2 - 1): int(b/2 + w/2) ] , axis=1)
+        #If there are, then place web in the outside rows
+        else:
+            flange2 =  np.delete(flange1, np.s_[ int(b-w-1):int(b) ] , axis=1)
+            flange =  np.delete(flange2, np.s_[ int(0):int(w) ] , axis=1)
+        
+        # Matrix now delets also all the web members
+        
+        #http://stackoverflow.com/questions/16632568/remove-a-specific-column-in-numpy
+        
+        '''
+        We want to remove the web lines from the matrix too
+        nobody will design an uneven width of a beam anyway,
+        so remove elements from
+        b/2
+        
+        '''
         
         '''
         The while conditon:
@@ -329,8 +360,9 @@ def iteration (h,b,f, Mx,My,S,P,maxstress,step):
         If either case is true the loop will stop.
         
         '''
+        
     
-        while (((np.max(absprincipal1[np.nonzero(absprincipal1)]))<maxstress) & np.any(flange)):
+        while (((np.max(absprincipal1[np.nonzero(absprincipal1)]))<maxstress) & np.any(flange) ) :
 
             
             '''
@@ -340,25 +372,53 @@ def iteration (h,b,f, Mx,My,S,P,maxstress,step):
             Starting from row f means that no elements within flange will be deleted. 
         
             '''
+            
+            #print (flange)
+            #print (principal1)
         
+            #print ("Max stressxkordxstep ", maxstress*step*kord, "\n")
+            #print ("Max stress value, ", np.max(absprincipal1[np.nonzero(absprincipal1)]) ,  "\n")
+            
             i=f
             j=0
 
-            while ( i<h ):
+            if (My1==0):
+            
+                while ( i<h ):
                 
-                #print (i)
-                while ( j<b ):
-                    if ( absprincipal1[i,j] < maxstress*step*kord ): 
-                        #print (absprincipal1[i,j] < maxstress*step*kord)
-                        principal1 [i,j] = 0
-                    j= j + 1
-                i=i+1
-                j=0
+                    #print (i)
+                    while ( j<b ):
+                        if ( absprincipal1[i,j] < maxstress*step*kord ): 
+                            #print (absprincipal1[i,j] < maxstress*step*kord)
+                        
+                            if ( j < (b/2-w/2) or j > (b/2+w/2-1)):
+                                principal1 [i,j] = 0
+
+                        j= j + 1
+                    i=i+1
+                    j=0
+                    
+            else:
+                
+                while ( i<h ):
+                
+                    #print (i)
+                    while ( j<b ):
+                        if ( absprincipal1[i,j] < maxstress*step*kord ): 
+                            #print (absprincipal1[i,j] < maxstress*step*kord)
+                        
+                            if ( j > (w-1) and j < (b-w)):
+                                principal1 [i,j] = 0
+
+                        j= j + 1
+                    i=i+1
+                    j=0
+                
                 
             #print ("after removing material new matrix is, ", "\n", principal1 )
                                 
             # Then you remember the new matrix with removed material and work with that instead
-            
+
             m = copy.deepcopy(principal1) 
             mx= copy.deepcopy (m.transpose())
 
@@ -389,21 +449,31 @@ def iteration (h,b,f, Mx,My,S,P,maxstress,step):
             # COMBINES TO PRINCIPAL
             principal1 = (principal(m, b, h, momentx, momenty, shear1))
             
+            #print(principal1)
+            
             # REPRODUCES THE NEW FLANGE MATRIC OF ELEMENTS BELOW IT
-            flange =  np.delete(principal1, np.s_[0:(f)], axis=0)
             
-            
-            #print ("momentx ", momentx, "\n")
-            #print ("momenty ", momenty, "\n")
-            #print ("shear ", shear1 , "\n")
-            
-            #print ("having recalculated principal stresses for new shape ","\n", principal1)
+            #The first line only does stuff with top flange
+            flange1 =  np.delete(principal1, np.s_[0:(f)], axis=0)
+
+                    #If there are no out of plane reactions, then place web in the moddle 
+            if (My1==0):
+                flange =  np.delete(flange1, np.s_[ int(b/2 - w/2 - 1): int(b/2 + w/2) ] , axis=1)
+            #If there are, then place web in the outside rows
+            else:
+                flange2 =  np.delete(flange1, np.s_[ int(b-w-1):int(b) ] , axis=1)
+                flange =  np.delete(flange2, np.s_[ int(0):int(w) ] , axis=1)
         
+
             axial1 = round(P/A,1)
         
             kord = kord + 1
-        
+            
+            #print (kord)
+            
+
             absprincipal1= abs(principal1)  
+            
         
             '''
             The iteration loop will stop if any stress value has gone above limit.
@@ -416,9 +486,324 @@ def iteration (h,b,f, Mx,My,S,P,maxstress,step):
             
             # No values in principal matrix are greater than maxstress
             # AND axial stress is smaller than maxstress
+            
+            #print (np.max(absprincipal1), "viimane if tingimus" )
     
             if ((np.max(absprincipal1[np.nonzero(absprincipal1)])) < maxstress) and (axial1 < maxstress):
             
                 remember= copy.deepcopy (principal1)
+                #rememberflange = copy.deepcopy(flange)
+                remembera= A
+                
+                #print (flange)
+                #print (remember)
+                
+                #index = ['Row'+str(i) for i in range(1, len(rememberflange)+1)]
+                #df = pandas.DataFrame(rememberflange, index=index)    
+                #df.to_csv('flange.csv', split=', ')
+                
+                #print ("Principal, ", "\n", remember)
+                   
+        print ("The area in mm2 is ", remembera)
+
+    return remember
+    
+    
+    
+    
+def flangemove (flangeremember,b, Mx, My,S,P,maxstress,step): 
+    "This gunction uses a defined web and flance thickness at which it moves the bottom around, not changing any cross-section" 
+    
+    from struct_func import geometry, moment, shear, principal
+    
+    '''
+    You take the optimised section also ti height
+    and try to delete more members of the bottom flange
+    '''
+    
+    #Measuring flange-actual thickness
+    
+    # so you take the moved base result and start deleting elements
+    # from both ends of the bottom flange
+    #ticky because the first will be zero anyway 
+    
+    absnewsection1= abs(flangeremember) 
+    #print ("Max in imported stress ", ((np.max(absnewsection1[np.nonzero(absnewsection1)])))  )
+    
+
+    flangeremember.shape
+    h = ( flangeremember.shape[0] ) #This return the nr of rows
+    print ("Measure the height ",h, "\n")
+
+        
+    #Now you start removing the row just below
+    #While max stresses are within allowable limits
+    
+    remember = copy.deepcopy (flangeremember)
+    
+    Y= (geometry(remember,b,h))
+    remembera =Y[0]
+    
+    newflange= copy.deepcopy(flangeremember)
+    absnewsection = abs(newflange)
+    #print ("Max current stress ", ((np.max(absnewsection[np.nonzero(absnewsection)])))  )
+    # you start from the two outermost rows of the flange
+    j1 = 0
+    j2 = b-1
+    midpoint=b/2
+
+    
+    #print ("The maximums stress is ", (np.max(absnewsection[np.nonzero(absnewsection)])) )
+    
+    while ( ((np.max(absnewsection[np.nonzero(absnewsection)])) < maxstress) and (j1<midpoint) ):
+        
+        #print ("Calculating at flange at row ", j1, "\n")
+        #h is the number of rowns, therefore last one is h-1
+        i = h-1 #start at the most bottom row 
+
+        
+        newflange[i,j1] = 0
+        newflange[i,j2] =0
+
+        i=i-1 #move up by one row, because the bottomw row will be zero at ends
+        
+        #delete all elelemnts in that column of the flange
+        while ( ( newflange[i,j1] != 0 ) and ( newflange[i,j2] !=0 ) ):
+            newflange[i,j1] = 0
+            newflange[i,j2] = 0
+            i=i-1
+            
+        #Prep for next round
+        j1=j1+1
+        j2=j2-1
+        
+        #print (newsection,"\n")
+        
+        '''
+        then you should recalculate and check the stress levels
+        and if they are fine you should then go on and delete the next two columsn
+        '''
+        
+        m = copy.deepcopy(newflange) 
+        mx= copy.deepcopy (m.transpose())
+
+        #MAJOR AXIS GEOMETRY
+
+        Y= (geometry(m,b,h))
+
+        A =Y[0]
+        ybary = Y[1]
+        Iy = Y[2]
+    
+        #MINOR AXIS GEOMETRY
+
+        Y= (geometry(mx,h,b))
+
+        ybarx = Y[1]
+        Ix = Y[2]
+    
+        # CALCULATE STRESSes IN EACH ELEMENT
+                        
+        momentx= (moment (m,Mx,b,h,ybary,Iy))
+
+        momenty= (moment (mx,My,h,b,ybarx,Ix))
+        momenty= copy.deepcopy (momenty.transpose())
+
+        shear1 = (shear(m,S, b, h,ybary,Iy))
+        
+        axial1=P/A
+            
+        # COMBINES TO PRINCIPAL
+        newsection2 = (principal(m, b, h, momentx, momenty, shear1))
+        
+        #print ("recalculating the principal stresses for new geomter, ", "\n")
+        #print(newsection,"\n")
+        
+            
+        absnewsection= abs(newsection2)  
+        
+        '''
+        The iteration loop will stop if any stress value has gone above limit.
+        Therefore we need to retrieve the results from before this happened, which is what
+        the 'remember' bit below does.
+            
+        
+        
+        if j1==100:
+            remembercopy2= np.flipud(newsection2)
+            remembercopy2[remembercopy2 == 0.0] = np.nan
+            np.flipud(remembercopy2)
+            # http://stackoverflow.com/questions/10114576/setting-points-with-no-data-to-white-with-matplotlib-imshow
+            img = plt.imshow(remembercopy2, interpolation='nearest')
+            img.set_cmap('plasma')  #Plasma is pretty http://matplotlib.org/examples/color/colormaps_reference.html
+            plt.clim(-275,275)
+            plt.axis('off')
+            plt.ylim([0,500])
+            plt.show()
+            plt.clf()
+        
+        if j1==50:
+            remembercopy2= np.flipud(newsection2)
+            remembercopy2[remembercopy2 == 0.0] = np.nan
+            np.flipud(remembercopy2)
+            # http://stackoverflow.com/questions/10114576/setting-points-with-no-data-to-white-with-matplotlib-imshow
+            img = plt.imshow(remembercopy2, interpolation='nearest')
+            img.set_cmap('plasma')  #Plasma is pretty http://matplotlib.org/examples/color/colormaps_reference.html
+            plt.clim(-275,275)
+            plt.axis('off')
+            plt.ylim([0,500])
+            plt.show()
+            plt.clf()
+        '''
+    
+            
+        #REMEMBERING THE CORRECT VALUES
+            
+        # No values in principal matrix are greater than maxstress
+        # AND axial stress is smaller than maxstress
+        
+        if ((np.max(absnewsection[np.nonzero(absnewsection)])) < maxstress) and (axial1 < maxstress):
+            
+                remember= copy.deepcopy (newsection2)
+                remembera= A
+                
+    #print ("The area in mm2 is ", remembera)
+    
+    #print ("The final I value n major axis is, ", Iy)
+    #print ("And the rotation is ", (Iy*190000/My) )
+    #print ("Which results in a deflection of (in mm), ", (Iy*190000*700/My) )
+    #where 700 only applied for length 7000 and 10 cuts
+
+    return remember
+    
+    
+    
+    
+    
+def basemove (midsection, h,b,f,w, Mx,My1, My,S,P,maxstress,step): 
+    "This gunction uses a defined web and flance thickness at which it moves the bottom around, not changing any cross-section" 
+    
+    from struct_func import geometry, moment, shear, principal
+    
+    '''
+    You'll take the optimum mid-section, and start by deleting the row just 
+    below the top flange. 
+    The top flange is probably thicker now than the initial perscribed
+    therefore the thickness needs to be measures
+    '''
+    
+    
+    #Measuring flange-actual thickness
+    
+    fa=0
+    i=0
+    
+    #just to make sure there  is not web at that place
+    if (My1==0):        
+        j=0 
+    else:
+        j= b/2-w/2-5
+
+    #print ("j value i", j)        
+    while ( midsection[i,j] != 0 ):
+        fa=fa+1
+        i=i+1
+        
+    #print("Flange thickness in this case is ,", fa, )
+        
+    #Now you start removing the row just below
+    #While max stresses are within allowable limits
+    
+    remember = copy.deepcopy(midsection)
+    
+    newsection= copy.deepcopy(midsection)
+    absnewsection = abs(newsection)
+    
+    while ( (np.max(absnewsection[np.nonzero(absnewsection)])) < maxstress ):
+    
+        
+        newsection1 =  np.delete(newsection, [fa+1], axis=0)     
+
+        h = h-1 #sest iga kord läheb väiksemaks
+
+        m = copy.deepcopy(newsection1) 
+        mx= copy.deepcopy (m.transpose())
+
+        #MAJOR AXIS GEOMETRY
+
+        Y= (geometry(m,b,h))
+
+        A =Y[0]
+        ybary = Y[1]
+        Iy = Y[2]
+    
+        #MINOR AXIS GEOMETRY
+
+        Y= (geometry(mx,h,b))
+
+        ybarx = Y[1]
+        Ix = Y[2]
+    
+        # CALCULATE STRESSes IN EACH ELEMENT
+                        
+        momentx= (moment (m,Mx,b,h,ybary,Iy))
+
+        momenty= (moment (mx,My,h,b,ybarx,Ix))
+        momenty= copy.deepcopy (momenty.transpose())
+
+        shear1 = (shear(m,S, b, h,ybary,Iy))
+        
+        axial1=P/A
+            
+        # COMBINES TO PRINCIPAL
+        newsection2 = (principal(m, b, h, momentx, momenty, shear1))
+        newsection=copy.deepcopy(newsection2)
+            
+        absnewsection= abs(newsection2)  
+        
+        '''
+        The iteration loop will stop if any stress value has gone above limit.
+        Therefore we need to retrieve the results from before this happened, which is what
+        the 'remember' bit below does.
+            
+        '''
+            
+        #REMEMBERING THE CORRECT VALUES
+            
+        # No values in principal matrix are greater than maxstress
+        # AND axial stress is smaller than maxstress
+        
+        '''
+        
+        remembercopy= copy.deepcopy(newsection)
+        remembercopy[remembercopy == 0.0] = np.nan
+        # http://stackoverflow.com/questions/10114576/setting-points-with-no-data-to-white-with-matplotlib-imshow
+
+
+        img = plt.imshow(remembercopy, interpolation='nearest')
+        img.set_cmap('plasma')  #Plasma is pretty http://matplotlib.org/examples/color/colormaps_reference.html
+        plt.clim(-275,275)
+        plt.axis('off')
+        plt.ylim([0,500])
+        plt.show()
+    
+        plt.clf()
+        
+        print (h)
+        '''
+            
+        
+        if ((np.max(absnewsection[np.nonzero(absnewsection)])) < maxstress) and (axial1 < maxstress):
+            
+                remember= copy.deepcopy (newsection2)
+                #remembera= A
+
+                   
+    #print ("The area in mm2 is ", remembera)
+    #print ("The actual hight now is, ", h)
+    
+    #print ("The final I value n major axis is, ", Iy)
+    #print ("And the rotation is ", (Iy*180000/My) )
+    #print ("Which results in a deflection of (in mm), ", (Iy*180000*700/My) )
 
     return remember
